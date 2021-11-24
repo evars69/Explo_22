@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exploratory Project</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" 
+    rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300&family=Rubik:wght@500&family=Ubuntu:wght@500&display=swap" 
+    rel="stylesheet">
+
+<script language="Javascript" type="text/javascript">
+
+/* SI definition of Gas Constant R */
+var R=8.31446261815324;
+
+/* Redlich-Kwong reduced parameters */
+var b=0.08664034996495773; /* (2^(1/3)-1)/3 */
+var a=0.4274802335403414;  /* 1/9/(2^(1/3)-1) */
+
+/* Critical Temperature and Pressure */
+var Tc,Pc
+
+/* Conversion Factors for units (Tunit is additive: 273.15) */
+var Tunit=-1,Punit=0,Vunit=0
+var ROUND=100000.0 /* output numbers will be rounded to log10(ROUND)+1 significant digits */
+
+/* Returns pressure of the explo equation */
+function pexplo(T,V)
+{
+    return T/(V-b)-a/(Math.sqrt(T)*V*(V+b));
+}
+
+/* Square */
+function Sqr(x)
+{
+    return x*x
+}
+
+/* Calculate volume for given (T,p). V is the initial value of volume. */
+function Vexplo(T,p,V)
+{
+    var d,q,last=pexplo(T,V)-p
+    var i
+    var fine=5000 /* Search resolution */
+
+    if (last<0) 
+    q=1-1.0/fine
+    else 
+    q=1+1.0/fine
+
+    for (i=0;;i++) 
+    {
+        V*=q;
+        d=pexplo(T,V)-p
+        if (last*d<0) 
+        break;
+        if (i>fine*5) 
+        {
+            alert("numerical problem");
+            return 0; 
+        } 
+    }
+
+/* See gen/ms.c in MACSIMUS */
+    MS_eps=1e-8;
+    MS_d=MS_eps*2;
+    var MS_f, MS_der;
+    MS_lastd=1000*MS_eps;
+    MS_g=0
+    MS_it=0
+    MS_n=-2
+    V+=MS_eps;
+    do 
+    {
+        if (MS_it>100) 
+        return 0;
+        MS_f=pexplo(T,V)-p;
+        if (MS_g==MS_f) 
+        {
+            MS_d*=-1.618; 
+            V+=MS_d; 
+        }
+        else 
+        {
+            if (MS_it<2) 
+            MS_der=MS_d/(MS_g-MS_f)
+            else 
+            MS_der=(MS_d/(MS_g-MS_f)*(Sqr(MS_d)+Sqr(MS_lastd))+MS_der*Sqr(MS_eps))/(Sqr(MS_d)+Sqr(MS_lastd)+Sqr(MS_eps))
+            MS_lastd=MS_d
+            MS_d=MS_f*MS_der
+            V+=MS_d 
+        }
+        MS_g=MS_f;
+        if (Math.abs(MS_d)>MS_eps) 
+        MS_n=-1; 
+        else 
+        MS_n++;
+        MS_it++; 
+    }
+    while (MS_n<1)
+    return V;
+}
+
+/* Return evaluated expression with simple syntax check */
+function myEval(s)
+{
+    v="0123456789.eE+-/*()"
+    l=s.length
+    var i,j
+    for (i=0; i<s.length; i++) 
+    {
+        KO=1;
+        for (j=0; j<v.length; j++)
+        if (v.charAt(j)==s.charAt(i)) 
+        KO=0;
+        if (KO) 
+        {
+            alert("\'"+s.charAt(i)+"\' is invalid character in \""+s+"\"\n>>> no spaces nor tabs\n>>> use decimal point, not comma")
+            return 0; 
+        } 
+    }
+    return eval(s)
+}
+
+/* Rounding */
+function myRound(x)
+{
+    // Return Math.round(x*1000000.0)/1000000.0
+    var q=1.0
+    if (Math.abs(x)<1e-12) 
+    return 0.0;
+    else if (Math.abs(x)<ROUND) 
+    {
+        while (Math.abs(x)<ROUND) 
+        { 
+            x*=10.0; 
+            q*=10.0; 
+        }
+        return Math.round(x)/q; 
+    }
+    else 
+    {
+        while (Math.abs(x)>ROUND*10.0) 
+        { 
+            x/=10.0; 
+            q*=10.0; 
+        }
+        return Math.round(x)*q; 
+    }
+}
+
+/* Fugacity Coefficient */
+function phi(T,P,V)
+{
+    z=P*V/T
+    return V/(V-b)*Math.exp(a/(T*Math.sqrt(T)*b)*Math.log(V/(V+b))+z-1)/z;
+}
+
+/* Print a line of results for Gas or Liquid */
+function zandphi(Tr,Pr,Vr)
+{
+    txt="gas"
+    if (Vr<1./3) 
+    txt="liquid"
+    x ="Tr="+myRound(Tr)
+    x+=" &nbsp; Pr="+myRound(Pr)
+    x+=" &nbsp; Vr="+myRound(Vr)
+    x+=" &nbsp; Z="+myRound(Pr*Vr/Tr)
+    x+=" &nbsp; &phi;="+myRound(phi(Tr,Pr,Vr))
+    x+=" &nbsp; T="+myRound(Tr*Tc)+" K ("+myRound(Tr*Tc-273.15)+" °C)"
+    x+=" &nbsp; P="+myRound(Pr*Pc/Punit)+" "+document.explo.Punit.value
+    x+=" &nbsp; Vm="+myRound(Vr*Tc*R/Pc/Vunit)+" "+document.explo.Vunit.value
+    document.getElementById(txt).innerHTML=x
+}
+
+/* Reading the values of quantities and performing calculations */
+function Calculate()
+{
+    var i
+    key=(document.explo.T.value.length==0)+(document.explo.P.value.length==0)+(document.explo.V.value.length==0)
+    if (key!=1) 
+    {
+        alert("Exactly one field of {Temperature, Pressure, Molar volume} can be left blank.")
+        return 
+    }
+
+    var Vr_l=0
+    var Vr=0,Pr=0,Tr=0
+
+    if (document.explo.Punit.value=="Pa") 
+    Punit=1.0
+    if (document.explo.Punit.value=="KPa") 
+    Punit=1e3
+    if (document.explo.Punit.value=="bar") 
+    Punit=1e5
+    if (document.explo.Punit.value=="atm") 
+    Punit=101325
+    if (document.explo.Punit.value=="MPa") 
+    Punit=1e6
+    if (Punit==0) 
+    {
+        alert("Pressure unit not selected!")
+        return 0; 
+    }
+
+    if (document.explo.Pc.value.length==0) 
+    alert("Critical Pressure is missing!")
+    else 
+    Pc=myEval(document.explo.Pc.value)*Punit
+
+    if (document.explo.Vunit.value=="m³/mol") 
+    Vunit=1.0
+    if (document.explo.Vunit.value=="dm³/mol") 
+    Vunit=1e-3
+    if (document.explo.Vunit.value=="cm³/mol") 
+    Vunit=1e-6
+    if (Vunit==0) 
+    {
+        alert("Volume unit not selected!")
+        return 0; 
+    }
+
+    if (document.explo.Tunit.value=="K") 
+    Tunit=0.0
+    if (document.explo.Tunit.value=="C") 
+    Tunit=273.15
+    if (Tunit<0) 
+    {
+        alert("Temperature unit not selected!")
+        return 0; 
+    }
+
+    if (document.explo.Tc.value.length==0) 
+    alert("Critical Temperature is missing!")
+    else 
+    Tc=myEval(document.explo.Tc.value)+Tunit
+    Tr=(myEval(document.explo.T.value)+Tunit)/Tc
+    Pr=myEval(document.explo.P.value)*Punit/Pc
+    Vr=myEval(document.explo.V.value)*Vunit*Pc/(R*Tc)
+
+    if (document.explo.T.value.length==0) 
+    {
+        // Calculate Temperature
+        if (Vr<=b) 
+        {
+            alert("Vr<=b");
+            return 0 
+        }
+        Tr=1;
+        for (i=0; ; i++) 
+        {
+            Tr0=Tr;
+            Tr=(Pr+a/(Math.sqrt(Tr)*Vr*(Vr+b)))*(Vr-b);
+            if (i>5000) 
+            {
+                alert("Cannot calculate Temperature!");
+                Tr=0; 
+                Tr0=0; 
+            }
+            if (Math.abs(Tr-Tr0)<1e-9) 
+            break; 
+        }
+    }
+
+    if (document.explo.P.value.length==0) 
+    {
+        if (Vr<=b) 
+        {
+            alert("Vr<=b");
+            return 0 
+        }
+        Pr=pexplo(Tr,Vr);
+    }
+
+    if (document.explo.V.value.length==0) 
+    {
+        if (Tr<=0) 
+        {
+            alert("Tr<=0");
+            return 0 
+        }
+        Vr=Vexplo(Tr,Pr,Tr/Pr);
+        if (Tr<1 || Vr==0) 
+        Vr_l=Vexplo(Tr,Pr,b*1.001);
+        if (Vr!=0 && Vr<=b) 
+        Vr=0;
+        if (Vr_l!=0 && Vr_l<=b) 
+        Vr_l=0;
+        if (Math.abs(Vr_l-Vr)<1e-7) 
+        Vr_l=0;
+        if (Vr==0 && Vr_l!=0) 
+        { 
+            Vr=Vr_l; 
+            Vr_l=0 
+        }
+        if (Vr+Vr_l==0) 
+        alert("No Volume found!")
+        if (Vr!=0 && Vr_l!=0 && (Vr<.333334 || Vr_l>.333333))
+        alert("(l)/(g) problem!");
+    }
+
+    document.getElementById("liquid").innerHTML="N.A."
+    document.getElementById("gas").innerHTML="N.A."
+
+    if (Vr!=0) 
+    zandphi(Tr,Pr,Vr)
+    if (Vr_l!=0) 
+    zandphi(Tr,Pr,Vr_l)
+}
+</script>
+
+<!--Style-->
+<style type="text/css">
+
+body 
+{
+    font-family: "Times New Roman", helvetica, sans-serif;
+    font-size: medium;
+    box-sizing: border-box;
+    padding-bottom: 1rem;
+    border-top: 1rem solid rgb(158, 37, 132);
+    padding-top: 4px;
+} 
+h1 
+{
+    font-family: "Arial", helvetica, sans-serif;
+    font-size: x-large;
+}
+table 
+{
+    background: rgb(218, 205, 255);
+    box-sizing: border-box;
+    padding-bottom: 1rem;
+    padding-top: 4px;
+}
+.head 
+{
+    text-align: center;
+    font-weight: 700;
+    color: rgb(107, 107, 110);
+    font-size: 2.2rem;
+}
+.p 
+{
+    color: rgb(90, 87, 87);
+    font-weight: 600;
+}
+.button 
+{
+    color: rgb(218, 205, 255);
+}
+
+</style>
+
+</head>
+
+<body  BGCOLOR="#ffffff">
+
+<div class="container" id="input_f"> 
+<div class="head">Exploratory Project</div>
+    <p class="text-center p">
+        <i><h5 class="text-center">By Varsha Kumari and Aarzoo Mittal</h5></i>
+    </p>
+    <p class="text-center p">
+        <u><h3 class="text-center">Redlich–Kwong Equation of State Calculator</h3></u>
+    </p>
+</div>
+    <p class="text-center p">
+        Calculate Pressure/Volume/Temperature, Compressibility Factor and Fugacity Coefficient for Liquid/Gas.<br>
+    </p>
+    <br>
+
+    <h4><i><b>&nbsp;Let's Calculate!</b></i></h4>
+    <ul type="square">
+        <li>Enter the Critical Temperature and Pressure.</li>
+        <li>Enter two of the three quantities and leave blank the field which is to be calculated.</li>
+        <li>Select units.</li>
+        <li>Click 'Calculate' to get the required quantity, Compressibility Factor and Fugacity Coefficient.</li>
+        <li>Expressions (of the form: 250/156) are accepted in input fields.</li>
+        </ul>
+    <br>
+
+<FORM NAME="explo" ACTION="dummy">
+<div>
+<div>
+    <p>
+    <table border="1" align="center">
+    <tr>
+        <td align="right">Critical Temperature = </td>
+        <td> <INPUT TYPE="text" name="Tc" SIZE="10"></td>
+        <td align="right">Temperature = </td>
+        <td> <INPUT TYPE="text" name="T" SIZE="10"></td>
+        <td><input type="radio" name="Tunit" value="C">  °C</td>
+        <td><input type="radio" name="Tunit" value="K"> K</td>
+    </tr>
+    <tr>
+        <td align="right">Critical Pressure = </td>
+        <td> <INPUT TYPE="text" name="Pc" SIZE="10"></td>
+        <td align="right">Pressure = </td>
+        <td> <INPUT TYPE="text" NAME="P" SIZE="10"></td>
+        <td><input type="radio" name="Punit" value="Pa"> Pa</td>
+        <td><input type="radio" name="Punit" value="kPa"> kPa</td>
+        <td><input type="radio" name="Punit" value="bar">bar</td>
+        <td><input type="radio" name="Punit" value="atm">atm</td>
+        <td><input type="radio" name="Punit" value="MPa">MPa</td>
+    </tr>
+    <tr>
+        <td></td>
+        <td></td>
+        <td align="right">Molar Volume =</td>
+        <td> <INPUT TYPE="text" NAME="V" SIZE="10"></td>
+        <td><input type="radio" name="Vunit" value="m³/mol"> m³/mol</td>
+        <td><input type="radio" name="Vunit" value="dm³/mol"> dm³/mol</td>
+        <td><input type="radio" name="Vunit" value="cm³/mol"> cm³/mol</td>
+        </tr>
+    </table>
+</div>
+<br>
+
+<div border="1" align="center"> 
+    <td><INPUT TYPE="button" onClick="Calculate()" VALUE="Calculate"></td>
+</div>
+</FORM>
+<br>
+
+<p border="1" align="center">
+    <b>-----RESULTS-----</b><br>
+    <table border="1" align="center">
+    <tr>
+        <td align="right">Gas:</td>
+        <td><span class="res" id="gas">N.A.</span><td>
+    </tr>
+    <tr>
+        <td align="right">Liquid:</td>
+        <td><span class="res" id="liquid">N.A.</span><td>
+    </tr>
+    </table>
+<br>
+<br>
+
+<p>
+    <h4><b><i>&nbsp;Why we chose Redlich-Kwong Equation of State?</i></b></h4><br>
+<p>
+    &nbsp;&nbsp;The Redlich–Kwong equation of state is an empirical algebraic equation that relates temperature, pressure, and volume 
+    of gases in physics and thermodynamics.<br>
+    &nbsp;&nbsp;At temperatures above the critical temperature, it is typically more precise than the van der Waals equation and the ideal 
+    gas equation.
+</p> 
+<br>
+
+<h4><b><i>&nbsp;Notations and what they stand for:-</i></b></h4>
+    <ul type="square">
+        <li>T = Temperature<br>
+        <li>P = Pressure<br>
+        <li>Vm = Molar Volume<br>
+        <li>Tc = Critical Temperature<br>
+        <li>Pc = Critical Pressure<br>
+        <li>Reduced Quantities: Tr=T/Tc, Pr=P/Pc, Vr=Vm/(R*Tc/Pc)<br>
+        <li>Z = Pr*Vr/Tr= P*Vm/(R*T) = Compressibility Factor<br>
+        <li>&phi; = Fugacity Coefficient<br>
+        <li>1 atm = 101325 Pa
+    </ul>
+</p>
+</body>
+</html>
